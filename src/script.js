@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import Stats from 'three/examples/jsm/libs/stats.module'
 import * as dat from 'dat.gui'
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
+import * as CANNON from 'cannon-es';
 
 /**
  * Debug
@@ -35,6 +36,9 @@ const canvas = document.querySelector('canvas.webgl')
 // Scene
 const scene = new THREE.Scene()
 
+const world = new CANNON.World();
+world.gravity.set(0, -9.81, 0);
+
 /**
  * Textures
  */
@@ -62,6 +66,7 @@ const sphereMaterial = new THREE.MeshStandardMaterial({
 })
 
 const objects = []
+const bodies = []
 
 const addSphere = () => {
     const newSphere = new THREE.Mesh(
@@ -76,11 +81,14 @@ const addSphere = () => {
     newSphere.position.z = Math.random() * 4 - 2
     scene.add(newSphere)
     objects.push(newSphere)
-    worker.postMessage({
-        operation: 'add_sphere',
-        position: newSphere.position,
-        radius
-    })
+    const shape = new CANNON.Sphere(radius)
+    const body = new CANNON.Body({
+        mass: 1,
+        shape
+    });
+    body.position.copy(newSphere.position);
+    world.addBody(body);
+    bodies.push(body);
 }
 
 const addBox = () => {
@@ -98,13 +106,14 @@ const addBox = () => {
     newBox.position.z = Math.random() * 4 - 2
     scene.add(newBox)
     objects.push(newBox)
-    worker.postMessage({
-        operation: 'add_box',
-        position: newBox.position,
-        width,
-        height,
-        depth
-    })
+    const shape = new CANNON.Box(new CANNON.Vec3(width / 2, height / 2, depth / 2))
+    const body = new CANNON.Body({
+        mass: 1,
+        shape,
+    });
+    body.position.copy(newBox.position);
+    world.addBody(body);
+    bodies.push(body);
 }
 
 const reset = () => {
@@ -112,9 +121,10 @@ const reset = () => {
         scene.remove(object);
     })
     objects.length = 0;
-    worker.postMessage({
-        operation: 'reset',
-    })
+    bodies.forEach(body => {
+        world.removeBody(body);
+    });
+    bodies.length = 0;
 }
 
 /**
@@ -132,6 +142,16 @@ const floor = new THREE.Mesh(
 floor.receiveShadow = true
 floor.rotation.x = - Math.PI * 0.5
 scene.add(floor)
+
+const floorShape = new CANNON.Plane()
+
+const floorBody = new CANNON.Body({
+    mass: 0,
+    shape: floorShape
+});
+floorBody.quaternion.setFromEuler(-Math.PI * 0.5, 0, 0);
+
+world.addBody(floorBody);
 
 /**
  * Lights
@@ -216,10 +236,14 @@ document.body.appendChild( VRButton.createButton( renderer ) );
 
 renderer.setAnimationLoop(() => 
 {
-    const elapsedTime = clock.getElapsedTime()
-
     // Update physics
-    syncPhysics();
+    world.step(1 / 60, clock.getDelta(), 3);
+
+    // Update objects
+    objects.forEach((object, index) => {
+        object.position.copy(bodies[index].position);
+        object.quaternion.copy(bodies[index].quaternion);
+    })
 
     // Update controls
     controls.update()
@@ -229,50 +253,4 @@ renderer.setAnimationLoop(() =>
     stats.update()
 })
 
-const worker = new Worker(new URL('./worker.js', import.meta.url));
-
-let positions = new Float32Array(1000 * 3);
-let quaternions = new Float32Array(1000 * 4);
-let count = 0;
-let updateFrame = false;
-
-worker.onmessage = (message) => {
-    if (message.data.operation === "update_frame") {
-        positions = message.data.positions;
-        quaternions = message.data.quaternions;
-        count = message.data.count;
-        updateFrame = true;
-    }
-}
-
-const requestPhysicsFrame = () => {
-    worker.postMessage({
-        operation: 'request_frame',
-        positions,
-        quaternions,
-    }, [positions.buffer, quaternions.buffer]);
-}
-
-const syncPhysics = () => {
-    if (updateFrame) {
-        for (let i = 0; i < Math.min(count, objects.length); i++) {
-            objects[i].position.set(
-                positions[i * 3 + 0],
-                positions[i * 3 + 1],
-                positions[i * 3 + 2]
-            );
-            objects[i].quaternion.set(
-                quaternions[i * 4 + 0],
-                quaternions[i * 4 + 1],
-                quaternions[i * 4 + 2],
-                quaternions[i * 4 + 3]
-            )
-        }
-
-        updateFrame = false;
-        requestPhysicsFrame();
-    }
-}
-
-addSphere();
-requestPhysicsFrame();
+addBox();
