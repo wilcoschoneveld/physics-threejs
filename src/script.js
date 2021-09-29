@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import Stats from 'three/examples/jsm/libs/stats.module'
 import * as dat from 'dat.gui'
+import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 
 /**
  * Debug
@@ -67,7 +68,7 @@ const addSphere = () => {
         sphereGeometry,
         sphereMaterial
     )
-    const radius = Math.random() * 0.3 + 0.1
+    const radius = Math.random() * 0.15 + 0.05
     newSphere.scale.set(radius, radius, radius)
     newSphere.castShadow = true
     newSphere.position.x = Math.random() * 4 - 2
@@ -87,9 +88,9 @@ const addBox = () => {
         boxGeometry,
         sphereMaterial
     )
-    const width = Math.random() * 0.6 + 0.2
-    const height = Math.random() * 0.6 + 0.2
-    const depth = Math.random() * 0.6 + 0.2
+    const width = Math.random() * 0.3 + 0.05
+    const height = Math.random() * 0.3 + 0.05
+    const depth = Math.random() * 0.3 + 0.05
     newBox.scale.set(width, height, depth)
     newBox.castShadow = true
     newBox.position.x = Math.random() * 4 - 2
@@ -194,6 +195,15 @@ renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 renderer.setSize(sizes.width, sizes.height)
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.xr.enabled = true;
+
+const controller = renderer.xr.getController(0);
+controller.addEventListener('select', guiParams.addBox);
+controller.addEventListener('squeeze', guiParams.addBox10);
+
+const controller2 = renderer.xr.getController(1);
+controller2.addEventListener('select', guiParams.addSphere);
+controller2.addEventListener('squeeze', guiParams.reset);
 
 /**
  * Animate
@@ -202,8 +212,9 @@ const clock = new THREE.Clock()
 
 const stats = Stats()
 document.body.appendChild(stats.dom)
+document.body.appendChild( VRButton.createButton( renderer ) );
 
-const tick = () =>
+renderer.setAnimationLoop(() => 
 {
     const elapsedTime = clock.getElapsedTime()
 
@@ -216,10 +227,7 @@ const tick = () =>
     // Render
     renderer.render(scene, camera)
     stats.update()
-
-    // Call tick again on the next frame
-    window.requestAnimationFrame(tick)
-}
+})
 
 const worker = new Worker(new URL('./worker.js', import.meta.url));
 
@@ -268,4 +276,3 @@ const syncPhysics = () => {
 
 addSphere();
 requestPhysicsFrame();
-tick();
